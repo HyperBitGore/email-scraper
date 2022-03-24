@@ -10,33 +10,17 @@ std::string current;
 
 size_t write_data(char* data, size_t itemsize, size_t nitems, void* ignore) {
 	size_t bytes = itemsize * nitems;
-	for (int i = 0; i < bytes; i++) {
-		file << data[i];
-	}
+	file << data;
+	//free(data);
 	return bytes;
 }
-int countSubstring(const std::string& str, const std::string& sub)
-{
-	if (sub.length() == 0) return 0;
-	int count = 0;
-	for (size_t offset = str.find(sub); offset != std::string::npos;
-		offset = str.find(sub, offset + sub.length()))
-	{
-		++count;
-	}
-	return count;
-}
+
 
 void findLinks(std::vector<std::string>& links) {
 	std::ifstream f;
 	f.open("temp.txt");
 	std::string line;
 	while (getline(f, line)) {
-
-		int number = countSubstring(line, "href=");
-		if (number > 0) {
-			std::cout << number << std::endl;
-		}
 		for (size_t start = line.find("href="); start != std::string::npos; start = line.find("href=", start)) {
 			for (start; line[start] != '='; start++);
 			start += 2;
@@ -83,7 +67,7 @@ void findEmails(std::string emails) {
 
 //https://curl.se/libcurl/c/CURLOPT_REDIR_PROTOCOLS.html
 //might need this
-//Get crawling working properly, then get email parsing in, and finally add some way to manually exit
+//Fix continous memory buildup because I don't clear curl buffers, then get email parsing in
 //Use my twitter to test https://twitter.com/hyperbitgore
 int main() {
 	CURL* curl;
@@ -94,17 +78,18 @@ int main() {
 	std::cin >> startingurl;
 	current = startingurl;
 	links.push_back(current);
-	while (links.size() > 0) {
+	for (int i = 0; i < links.size(); i++) {
 		file.open("temp.txt");
-		for (auto& j : links) {
-			curl_easy_setopt(curl, CURLOPT_URL, j.c_str());
-			curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_data);
-			curl_easy_setopt(curl, CURLOPT_FORBID_REUSE, 1L);
-			curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-			curl_easy_perform(curl);
-			curl_easy_reset(curl);
-			findLinks(links);
-		}
+		current = links[i];
+		std::cout << "Getting " << links[i] << std::endl;
+		curl_easy_setopt(curl, CURLOPT_URL, links[i].c_str());
+		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_data);
+		curl_easy_setopt(curl, CURLOPT_FORBID_REUSE, 1L);
+		curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+		curl_easy_perform(curl);
+		curl_easy_reset(curl);
+		findLinks(links);
+		links.erase(links.begin() + i);
 		file.close();
 	}
 	system("pause");
