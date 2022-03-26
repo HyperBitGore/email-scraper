@@ -4,15 +4,17 @@
 #include <fstream>
 #include <vector>
 #include <string>
+#include <algorithm>
 
 std::ofstream file;
 std::string current;
 std::vector<std::string> processed;
+char* datar;
+std::string odata;
 
 size_t write_data(char* data, size_t itemsize, size_t nitems, void* ignore) {
 	size_t bytes = itemsize * nitems;
 	file << data;
-	//free(data);
 	return bytes;
 }
 
@@ -22,11 +24,16 @@ void findLinks(std::vector<std::string>& links) {
 	f.open("temp.txt");
 	std::string line;
 	while (getline(f, line)) {
-		for (size_t start = line.find("href="); start != std::string::npos; start = line.find("href=", start)) {
+		for (size_t start = line.find("href="); start != std::string::npos && start < line.size(); start = line.find("href=", start)) {
+			bool skip = false;
 			for (start; line[start] != '=' && start < line.size(); start++);
 			start += 2;
+			if (start > line.size()) {
+				skip = true;
+			}
+			if(!skip){
 			std::string cur;
-			for (start; line[start] != '\"' && start < line.size(); start++) {
+			for (start; line[start] != '#' && line[start] != '\"' && start < line.size(); start++) {
 				cur.push_back(line[start]);
 			}
 			if (cur.find("https://") == std::string::npos) {
@@ -41,10 +48,15 @@ void findLinks(std::vector<std::string>& links) {
 					}
 				}
 				std::string temp = add + cur;
-				links.push_back(temp);
+				if (temp.find("#twtr-main") == std::string::npos) {
+					links.push_back(temp);
+				}
 			}
 			else {
-				links.push_back(cur);
+				if (cur.find("#twtr-main") == std::string::npos) {
+					links.push_back(cur);
+				}
+			}
 			}
 		}
 	}
@@ -52,6 +64,8 @@ void findLinks(std::vector<std::string>& links) {
 }
 void findEmails(std::vector<std::string>& emails) {
 	std::ifstream e;
+	std::fstream f;
+	f.open("emails.txt", std::ios::app | std::ios::out);
 	e.open("temp.txt");
 	std::string line;
 	while (getline(e, line)) {
@@ -59,61 +73,64 @@ void findEmails(std::vector<std::string>& emails) {
 		if (start != std::string::npos) {
 				std::string temp;
 				bool skip = false;
+				bool non = false;
 				for (start; line[start] != ' ' && line[start] != '\"' && line[start] != ':' && line[start] != '/' && start > 0; start--);
-				if (line[start] == ':' || line[start] == '\"') {
+				if (line[start] == ':' || line[start] == '\"' || line[start] == '>') {
 					start++;
+				}
+				if (start > line.size() - 1) {
+					non = true;
 				}
 				bool domainmode = false;
 				int domainsize = 0;
-				for (start; line[start] != '\"' && line[start] != '\n' && line[start] != ' ' && line[start] != '<' && start < line.size(); start++) {
-					if (domainmode) {
-						if (line[start] > 255 || line[start] < -1) {
-							skip = true;
-							break;
-						}
-						if (std::isalnum(line[start]) || line[start] == '.' || line[start] == '-') {
-							temp.push_back(line[start]);
-							domainsize++;
+				if (!non) {
+					for (start; line[start] != '\"' && line[start] != '\n' && line[start] != ' ' && line[start] != '<' && start < line.size(); start++) {
+						if (domainmode) {
+							if (line[start] > 255 || line[start] < -1) {
+								skip = true;
+								break;
+							}
+							if (std::isalnum(line[start]) || line[start] == '.' || line[start] == '-') {
+								temp.push_back(line[start]);
+								domainsize++;
+							}
+							else {
+								skip = true;
+								break;
+							}
+							//Maximum label length in domains
+							if (domainsize > 63) {
+								skip = true;
+								break;
+							}
 						}
 						else {
+							temp.push_back(line[start]);
+							if (line[start] == '@') {
+								domainmode = true;
+							}
+						}
+					}
+					for (auto& i : emails) {
+						if (temp.compare(i) == 0) {
 							skip = true;
 							break;
 						}
-						//Maximum label length in domains
-						if (domainsize > 63) {
-							skip = true;
-							break;
-						}
 					}
-					else {
-						temp.push_back(line[start]);
-						if (line[start] == '@') {
-							domainmode = true;
+					if (!skip) {
+						if (temp.find(".com") != std::string::npos || temp.find(".net") != std::string::npos || temp.find(".org") != std::string::npos) {
+							std::cout << "Adding " << temp << std::endl;
+							emails.push_back(temp);
+							f << temp << '\n';
 						}
 					}
 				}
-				if (!skip) {
-					if (temp.find(".com") != std::string::npos || temp.find(".net") != std::string::npos || temp.find(".org") != std::string::npos) {
-						std::cout << "Adding " << temp << std::endl;
-						emails.push_back(temp);
-					}
-				}
-				//std::cout << temp << std::endl;
 			}
-	}
-		
-	std::ofstream f;
-	f.open("emails.txt");
-	for (auto& i : emails) {
-		f << i << '\n';
 	}
 	f.close();
 	e.close();
 }
-
-//Fix memory leak and the repeating of links already processed
 //Use my twitter to test https://twitter.com/hyperbitgore
-//https://www.goresoft.com/
 int main() {
 	CURL* curl;
 	std::vector<std::string> links;
@@ -124,28 +141,34 @@ int main() {
 	std::cin >> startingurl;
 	current = startingurl;
 	links.push_back(current);
+	remove("emails.txt");
 	while(links.size() > 0) {
-		//This does not work, fix this
+		bool skip = false;
 		for (auto& i : processed) {
-			if (links[0] == i) {
+			if (links[0].compare(i) == 0) {
 				links.erase(links.begin());
+				skip = true;
 				break;
 			}
 		}
-		file.open("temp.txt");
-		current = links[0];
-		std::cout << "Getting " << current << std::endl;
-		curl_easy_setopt(curl, CURLOPT_URL, links[0].c_str());
-		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_data);
-		curl_easy_setopt(curl, CURLOPT_FORBID_REUSE, 1L);
-		curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-		curl_easy_perform(curl);
-		curl_easy_reset(curl);
-		findLinks(links);
-		findEmails(emails);
-		processed.push_back(links[0]);
+		if (!skip) {
+			file.open("temp.txt");
+			current = links[0];
+			std::cout << "Getting " << current << std::endl;
+			curl_easy_setopt(curl, CURLOPT_URL, links[0].c_str());
+			curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_data);
+			curl_easy_setopt(curl, CURLOPT_FORBID_REUSE, 1L);
+			curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+			curl_easy_perform(curl);
+			curl_easy_reset(curl);
+			findLinks(links);
+			findEmails(emails);
+			processed.push_back(links[0]);
+			file.close();
+		}
 		links.erase(links.begin());
-		file.close();
+		std::sort(links.begin(), links.end());
+		links.erase(std::unique(links.begin(), links.end()), links.end());
 	}
 	system("pause");
 
