@@ -40,46 +40,14 @@ void findLinks(std::vector<std::string>& links) {
 						add.push_back(current[i]);
 					}
 				}
-				bool push = true;
 				std::string temp = add + cur;
-				for (auto& i : links) {
-					if (temp.compare(i) == 0) {
-						push = false;
-					}
-				}
-				for (auto& i : processed) {
-					if (temp.compare(i) == 0) {
-						push = false;
-					}
-				}
-				if (push) {
-					links.push_back(temp);
-				}
+				links.push_back(temp);
 			}
 			else {
-				bool push = true;
-				for (auto& i : links) {
-					if (cur.compare(i) == 0) {
-						push = false;
-					}
-				}
-				for (auto& i : processed) {
-					if (cur.compare(i) == 0) {
-						push = false;
-					}
-				}
-				if (push) {
-					links.push_back(cur);
-				}
+				links.push_back(cur);
 			}
 		}
 	}
-	std::ofstream temp;
-	temp.open("tt.txt");
-	for (auto& i : links) {
-		temp << i << '\n';
-	}
-	temp.close();
 	f.close();
 }
 void findEmails(std::vector<std::string>& emails) {
@@ -90,16 +58,45 @@ void findEmails(std::vector<std::string>& emails) {
 		size_t start = line.find("@");
 		if (start != std::string::npos) {
 				std::string temp;
+				bool skip = false;
 				for (start; line[start] != ' ' && line[start] != '\"' && line[start] != ':' && line[start] != '/' && start > 0; start--);
 				if (line[start] == ':' || line[start] == '\"') {
 					start++;
 				}
+				bool domainmode = false;
+				int domainsize = 0;
 				for (start; line[start] != '\"' && line[start] != '\n' && line[start] != ' ' && line[start] != '<' && start < line.size(); start++) {
-					temp.push_back(line[start]);
+					if (domainmode) {
+						if (line[start] > 255 || line[start] < -1) {
+							skip = true;
+							break;
+						}
+						if (std::isalnum(line[start]) || line[start] == '.' || line[start] == '-') {
+							temp.push_back(line[start]);
+							domainsize++;
+						}
+						else {
+							skip = true;
+							break;
+						}
+						//Maximum label length in domains
+						if (domainsize > 63) {
+							skip = true;
+							break;
+						}
+					}
+					else {
+						temp.push_back(line[start]);
+						if (line[start] == '@') {
+							domainmode = true;
+						}
+					}
 				}
-				if (temp.find(".com") != std::string::npos || temp.find(".net") != std::string::npos || temp.find(".org") != std::string::npos) {
-					std::cout << "Adding " << temp << std::endl;
-					emails.push_back(temp);
+				if (!skip) {
+					if (temp.find(".com") != std::string::npos || temp.find(".net") != std::string::npos || temp.find(".org") != std::string::npos) {
+						std::cout << "Adding " << temp << std::endl;
+						emails.push_back(temp);
+					}
 				}
 				//std::cout << temp << std::endl;
 			}
@@ -114,8 +111,9 @@ void findEmails(std::vector<std::string>& emails) {
 	e.close();
 }
 
-//Get email parsing in
+//Fix memory leak and the repeating of links already processed
 //Use my twitter to test https://twitter.com/hyperbitgore
+//https://www.goresoft.com/
 int main() {
 	CURL* curl;
 	std::vector<std::string> links;
@@ -127,6 +125,13 @@ int main() {
 	current = startingurl;
 	links.push_back(current);
 	while(links.size() > 0) {
+		//This does not work, fix this
+		for (auto& i : processed) {
+			if (links[0] == i) {
+				links.erase(links.begin());
+				break;
+			}
+		}
 		file.open("temp.txt");
 		current = links[0];
 		std::cout << "Getting " << current << std::endl;
